@@ -110,6 +110,11 @@ def train_technology(
     
     try:
         for episode in range(episodes):
+            # Early stop if Model-Based RL world model has converged
+            if hasattr(agent, 'is_converged') and agent.is_converged:
+                logger.info(f"World model converged. Early stopping at episode {episode}/{episodes}")
+                break
+            
             obs, info = env.reset()
             episode_reward = 0.0
             episode_length = 0
@@ -270,29 +275,39 @@ def main():
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.n
     
+    # Check GPU availability
+    import torch
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    if torch.cuda.is_available():
+        gpu_name = torch.cuda.get_device_name(0)
+        logger.info(f"\n🚀 GPU Detected: {gpu_name}")
+        logger.info(f"Using device: {device}\n")
+    else:
+        logger.info(f"\n⚠️  No GPU detected. Using CPU\n")
+    
     # Define all technologies (only include available ones)
     technologies = {}
     
     if HierarchicalRLAgent:
-        technologies["Hierarchical RL"] = lambda: HierarchicalRLAgent(state_dim, action_dim)
+        technologies["Hierarchical RL"] = lambda: HierarchicalRLAgent(state_dim, action_dim, device=device)
     if ModelBasedRLAgent:
-        technologies["Model-Based RL"] = lambda: ModelBasedRLAgent(state_dim, action_dim)
+        technologies["Model-Based RL"] = lambda: ModelBasedRLAgent(state_dim, action_dim, device=device)
     if BehavioralCloningAgent:
-        technologies["Imitation Learning (BC)"] = lambda: BehavioralCloningAgent(state_dim, action_dim)
+        technologies["Imitation Learning (BC)"] = lambda: BehavioralCloningAgent(state_dim, action_dim, device=device)
     if TransformerAgent:
-        technologies["Transformer"] = lambda: TransformerAgent(state_dim, action_dim)
+        technologies["Transformer"] = lambda: TransformerAgent(state_dim, action_dim, device=device)
     if BayesianAgent:
-        technologies["Bayesian"] = lambda: BayesianAgent(state_dim, action_dim)
+        technologies["Bayesian"] = lambda: BayesianAgent(state_dim, action_dim, device=device)
     if CausalAgent:
-        technologies["Causal"] = lambda: CausalAgent(state_dim, action_dim)
+        technologies["Causal"] = lambda: CausalAgent(state_dim, action_dim, device=device)
     if NeuroSymbolicAgent:
-        technologies["Neuro-Symbolic"] = lambda: NeuroSymbolicAgent(state_dim, action_dim)
+        technologies["Neuro-Symbolic"] = lambda: NeuroSymbolicAgent(state_dim, action_dim, device=device)
     if MAMLAgent:
-        technologies["Meta-Learning (MAML)"] = lambda: MAMLAgent(state_dim, action_dim)
+        technologies["Meta-Learning (MAML)"] = lambda: MAMLAgent(state_dim, action_dim, device=device)
     if LLMTrafficAgent:
-        technologies["LLM"] = lambda: LLMTrafficAgent(state_dim, action_dim)
+        technologies["LLM"] = lambda: LLMTrafficAgent(state_dim, action_dim, device=device)
     if DiffusionTrafficAgent:
-        technologies["Diffusion"] = lambda: DiffusionTrafficAgent(state_dim, action_dim)
+        technologies["Diffusion"] = lambda: DiffusionTrafficAgent(state_dim, action_dim, device=device)
     
     # Filter technologies if specified
     if args.technologies:

@@ -62,8 +62,9 @@ class OptionPolicyNetwork(nn.Module):
     
     def select_action(self, state: np.ndarray, epsilon: float = 0.0) -> int:
         """Select action using epsilon-greedy policy."""
+        device = next(self.parameters()).device
         with torch.no_grad():
-            state_tensor = torch.FloatTensor(state).unsqueeze(0)
+            state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
             logits = self.forward(state_tensor)
             
             if np.random.random() < epsilon:
@@ -97,8 +98,9 @@ class TerminationNetwork(nn.Module):
     
     def should_terminate(self, state: np.ndarray, threshold: float = 0.5) -> bool:
         """Check if option should terminate."""
+        device = next(self.parameters()).device
         with torch.no_grad():
-            state_tensor = torch.FloatTensor(state).unsqueeze(0)
+            state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
             prob = self.forward(state_tensor).item()
             return prob > threshold
 

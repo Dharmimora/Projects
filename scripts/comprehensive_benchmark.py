@@ -92,16 +92,18 @@ logger = logging.getLogger(__name__)
 class BenchmarkRunner:
     """Runs comprehensive benchmarks on all technologies."""
     
-    def __init__(self, config_path: str, num_test_episodes: int = 100):
+    def __init__(self, config_path: str, num_test_episodes: int = 100, model_dir: str = None):
         """
         Initialize benchmark runner.
         
         Args:
             config_path: Path to traffic configuration
             num_test_episodes: Number of episodes to test each technology
+            model_dir: Directory containing trained models
         """
         self.config_path = config_path
         self.num_test_episodes = num_test_episodes
+        self.model_dir = Path(model_dir) if model_dir else None
         
         # Load configuration
         config = load_config(config_path)
@@ -111,6 +113,14 @@ class BenchmarkRunner:
         self.env = TrafficEnv(self.traffic_config)
         self.state_dim = self.env.observation_space.shape[0]
         self.action_dim = self.env.action_space.n
+        
+        # Check GPU availability
+        import torch
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.is_available():
+            gpu_name = torch.cuda.get_device_name(0)
+            logger.info(f"GPU Detected: {gpu_name}")
+            logger.info(f"Using device: {self.device}")
         
         logger.info(f"Initialized benchmark with {num_test_episodes} test episodes per technology")
     
@@ -144,15 +154,30 @@ class BenchmarkRunner:
             agent = agent_class(
                 state_dim=self.state_dim,
                 action_dim=self.action_dim,
+                device=self.device,
             )
             
             if model_path and Path(model_path).exists():
                 agent.load(model_path)
                 logger.info(f"Loaded model from {model_path}")
+            elif self.model_dir:
+                # Try to auto-find model in model_dir
+                tech_name = name.lower().replace(' ', '_').replace('-', '_')
+                possible_paths = [
+                    self.model_dir / tech_name / f"{tech_name}_model.pt",
+                    self.model_dir / tech_name.replace('_', '-') / f"{tech_name.replace('_', '-')}_model.pt",
+                ]
+                for path in possible_paths:
+                    if path.exists():
+                        agent.load(str(path))
+                        logger.info(f"Auto-loaded model from {path}")
+                        break
             
             return self._run_benchmark(name, agent)
         except Exception as e:
             logger.error(f"Error benchmarking {name}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return {"error": str(e)}
     
     def benchmark_hierarchical_rl(self, model_path: str = None) -> Dict[str, Any]:
@@ -238,9 +263,16 @@ class BenchmarkRunner:
                     import inspect
                     sig = inspect.signature(controller.select_action)
                     if 'epsilon' in sig.parameters:
-                        action = controller.select_action(obs, epsilon=0.0)  # No exploration
+                        result = controller.select_action(obs, epsilon=0.0)  # No exploration
                     else:
-                        action = controller.select_action(obs)
+                        result = controller.select_action(obs)
+                    
+                    # Handle tuple returns (action, explanation/reasoning)
+                    if isinstance(result, tuple):
+                        action = result[0]
+                    else:
+                        action = result
+                        
                 elif hasattr(controller, 'compute_timing'):
                     # For Fuzzy Controller
                     green_time = controller.compute_timing(obs)
@@ -258,6 +290,9 @@ class BenchmarkRunner:
                     action = np.argmin(np.abs(green_values - green_time))
                 else:
                     action = 0  # Default
+                
+                # Ensure action is integer
+                action = int(action)
                 
                 # Execute action
                 next_obs, reward, terminated, truncated, step_info = self.env.step(action)
@@ -439,9 +474,11 @@ if __name__ == '__main__':
                        help='Number of test episodes per technology')
     parser.add_argument('--output', type=str, default='./benchmark_results.json',
                        help='Output file for results')
+    parser.add_argument('--model-dir', type=str, default=None,
+                       help='Directory containing trained models')
     
     args = parser.parse_args()
     
-    runner = BenchmarkRunner(args.config, args.episodes)
+    runner = BenchmarkRunner(args.config, args.episodes, args.model_dir)
     results = runner.run_all_benchmarks(args.output)
 

@@ -47,8 +47,8 @@ class TransitionModel(nn.Module):
     
     def forward(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
         """Predict next state."""
-        # One-hot encode action
-        action_onehot = torch.zeros(state.shape[0], self.network[0].in_features - state.shape[1])
+        # One-hot encode action - ensure same device as state
+        action_onehot = torch.zeros(state.shape[0], self.network[0].in_features - state.shape[1], device=state.device)
         action_onehot.scatter_(1, action.unsqueeze(1), 1)
         
         # Concatenate state and action
@@ -77,8 +77,8 @@ class RewardModel(nn.Module):
     
     def forward(self, state: torch.Tensor, action: torch.Tensor, next_state: torch.Tensor) -> torch.Tensor:
         """Predict reward."""
-        # One-hot encode action
-        action_onehot = torch.zeros(state.shape[0], self.network[0].in_features - state.shape[1] * 2)
+        # One-hot encode action - ensure same device as state
+        action_onehot = torch.zeros(state.shape[0], self.network[0].in_features - state.shape[1] * 2, device=state.device)
         action_onehot.scatter_(1, action.unsqueeze(1), 1)
         
         # Concatenate state, action, next_state
@@ -163,18 +163,18 @@ class WorldModel:
         reward_losses = []
         
         for epoch in range(epochs):
-            # Shuffle data
+            # Shuffle data - use torch tensors for proper device handling
             indices = torch.randperm(len(states))
             
             epoch_transition_loss = []
             epoch_reward_loss = []
             
             for i in range(0, len(states), batch_size):
-                batch_indices = indices[i:i + batch_size]
-                batch_states = states[batch_indices]
-                batch_actions = actions[batch_indices]
-                batch_next_states = next_states[batch_indices]
-                batch_rewards = rewards[batch_indices]
+                batch_idx = indices[i:i + batch_size].to(self.device)
+                batch_states = torch.index_select(states, 0, batch_idx)
+                batch_actions = torch.index_select(actions, 0, batch_idx)
+                batch_next_states = torch.index_select(next_states, 0, batch_idx)
+                batch_rewards = torch.index_select(rewards, 0, batch_idx)
                 
                 # Train transition model
                 pred_next_states = self.transition_model(batch_states, batch_actions)
